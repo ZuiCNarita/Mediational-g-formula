@@ -1,0 +1,272 @@
+library(mice)
+library(boot)
+load("imputed_data.RData") 
+
+### anydep
+## Parametric mediation g-formula
+effect_estimates_modified_fn <- function(data, indices) { 
+  set.seed(123 + sum(indices[1])) 
+  d_fit_sample <- data[indices, ]
+  d_baseline_for_pred <- data 
+  n_obs <- nrow(d_baseline_for_pred)
+  
+  # Covariates that would not be affected by gender
+  fixed_baseline_confounders_formula_part <- "AA1age + incomeT1 + AA79Fsep + cohesionT1 + BFIQ"
+  
+  # Covariate models for those affected by gender
+  L1_predictors_formula_part <- paste("girl +", fixed_baseline_confounders_formula_part)
+  
+  formula_L1_bmi <- paste("bmiT1 ~", L1_predictors_formula_part)
+  bmiT1_model <- lm(formula(formula_L1_bmi), data = d_fit_sample)
+  sigma_bmiT1 <- sigma(bmiT1_model); if(is.null(sigma_bmiT1) || is.na(sigma_bmiT1) || sigma_bmiT1 <= 1e-9) sigma_bmiT1 <- 1e-6
+  
+  formula_L1_mothernri <- paste("mothernriT1 ~", L1_predictors_formula_part)
+  mothernriT1_model <- lm(formula(formula_L1_mothernri), data = d_fit_sample)
+  sigma_mothernriT1 <- sigma(mothernriT1_model); if(is.null(sigma_mothernriT1) || is.na(sigma_mothernriT1) || sigma_mothernriT1 <= 1e-9) sigma_mothernriT1 <- 1e-6
+  
+  formula_L1_fathernri <- paste("fathernriT1 ~", L1_predictors_formula_part)
+  fathernriT1_model <- lm(formula(formula_L1_fathernri), data = d_fit_sample)
+  sigma_fathernriT1 <- sigma(fathernriT1_model); if(is.null(sigma_fathernriT1) || is.na(sigma_fathernriT1) || sigma_fathernriT1 <= 1e-9) sigma_fathernriT1 <- 1e-6
+  
+  formula_L1_friendnri <- paste("friendnriT1 ~", L1_predictors_formula_part)
+  friendnriT1_model <- lm(formula(formula_L1_friendnri), data = d_fit_sample)
+  sigma_friendnriT1 <- sigma(friendnriT1_model); if(is.null(sigma_friendnriT1) || is.na(sigma_friendnriT1) || sigma_friendnriT1 <= 1e-9) sigma_friendnriT1 <- 1e-6
+  
+  formula_L1_piu <- paste("piuT1 ~", L1_predictors_formula_part)
+  piuT1_model <- lm(formula(formula_L1_piu), data = d_fit_sample)
+  sigma_piuT1 <- sigma(piuT1_model); if(is.null(sigma_piuT1) || is.na(sigma_piuT1) || sigma_piuT1 <= 1e-9) sigma_piuT1 <- 1e-6
+  
+  formula_L1_sdqbulliedT1 <- paste("sdqbulliedT1 ~", L1_predictors_formula_part)
+  sdqbulliedT1_model <- glm(formula(formula_L1_sdqbulliedT1), data = d_fit_sample, family = binomial)
+  
+  formula_L1_punishT1 <- paste("punishT1 ~", L1_predictors_formula_part)
+  punishT1_model <- glm(formula(formula_L1_punishT1), data = d_fit_sample, family = binomial)
+  
+  formula_L1_Q3gamingtimeT1 <- paste("Q3gamingtimeT1 ~", L1_predictors_formula_part)
+  Q3gamingtimeT1_model <- glm(formula(formula_L1_Q3gamingtimeT1), data = d_fit_sample, family = binomial)
+  
+  formula_L1_noexerciseMT1 <- paste("noexerciseMT1 ~", L1_predictors_formula_part)
+  noexerciseMT1_model <- glm(formula(formula_L1_noexerciseMT1), data = d_fit_sample, family = binomial)
+  
+  formula_L1_coffeeT1 <- paste("coffeeT1 ~", L1_predictors_formula_part)
+  coffeeT1_model <- glm(formula(formula_L1_coffeeT1), data = d_fit_sample, family = binomial)
+
+  
+  formula_L1_anydepT1 <- paste("anydepT1 ~", L1_predictors_formula_part)
+  anydepT1_model <- glm(formula(formula_L1_anydepT1), data = d_fit_sample, family = binomial)
+  
+  # Mediator models
+  current_L1_A0_V_formula_part <- paste("girl + bmiT1 + mothernriT1 + fathernriT1 + friendnriT1 +
+                                        sdqbulliedT1 + punishT1 + piuT1 +
+                                        Q3gamingtimeT1 + noexerciseMT1 + coffeeT1 +
+                                        anydepT1 +", fixed_baseline_confounders_formula_part)
+  
+  formula_M2_wishsub <- paste("wishsubT2 ~", current_L1_A0_V_formula_part) 
+  wishsubT2_model <- glm(formula(formula_M2_wishsub), data = d_fit_sample, family = binomial)
+  
+  formula_M2_desire <- paste("desirethinT2 ~", current_L1_A0_V_formula_part)
+  desirethinT2_model <- glm(formula(formula_M2_desire), data = d_fit_sample, family = binomial)
+  
+  formula_M2_lonely <- paste("lonelyT2 ~", current_L1_A0_V_formula_part) 
+  lonelyT2_model <- glm(formula(formula_M2_lonely), data = d_fit_sample, family = binomial)
+  
+  # Outcome model
+  outcome_predictors_T3 <- c(
+    "girl", fixed_baseline_confounders_formula_part, 
+    "bmiT1", "mothernriT1", "fathernriT1", "friendnriT1", "sdqbulliedT1", "punishT1",
+    "piuT1", "Q3gamingtimeT1", "noexerciseMT1", "coffeeT1", "anydepT1",      # L1
+    "wishsubT2", "desirethinT2", "lonelyT2",         # M2
+    "girl:wishsubT2", "girl:desirethinT2", "girl:lonelyT2", # E-M interactions
+    "wishsubT2:desirethinT2", "desirethinT2:lonelyT2", "lonelyT2:wishsubT2"  # M-M interactions
+  )
+  outcome_model_formula_string_T3 <- paste(unique(outcome_predictors_T3), collapse = " + ")
+  outcome_model_T3 <- glm(formula(paste("anydepT3 ~", outcome_model_formula_string_T3)),
+                          data = d_fit_sample, family = binomial)
+  
+  # Simulate full history 
+  simulate_full_history_fn <- function(baseline_data, A0_val) {
+    sim_data <- baseline_data 
+    sim_data$girl <- A0_val  
+    n_sim <- nrow(sim_data)
+    
+    # Simulated covariate distributions
+    sim_data$bmiT1       <- rnorm(n_sim, predict(bmiT1_model, newdata = sim_data), sigma_bmiT1)
+    sim_data$mothernriT1       <- rnorm(n_sim, predict(mothernriT1_model, newdata = sim_data), sigma_mothernriT1)
+    sim_data$fathernriT1       <- rnorm(n_sim, predict(fathernriT1_model, newdata = sim_data), sigma_fathernriT1)
+    sim_data$friendnriT1       <- rnorm(n_sim, predict(friendnriT1_model, newdata = sim_data), sigma_friendnriT1)
+    sim_data$piuT1       <- rnorm(n_sim, predict(piuT1_model, newdata = sim_data), sigma_piuT1)
+    
+    pred_prob_sdqbulliedT1 <- predict(sdqbulliedT1_model, newdata = sim_data, type = "response"); pred_prob_sdqbulliedT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_sdqbulliedT1))
+    sim_data$sdqbulliedT1 <- rbinom(n_sim, 1, pred_prob_sdqbulliedT1)
+    
+    pred_prob_punishT1 <- predict(punishT1_model, newdata = sim_data, type = "response"); pred_prob_punishT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_punishT1))
+    sim_data$punishT1 <- rbinom(n_sim, 1, pred_prob_punishT1)
+    
+    pred_prob_Q3gamingtimeT1 <- predict(Q3gamingtimeT1_model, newdata = sim_data, type = "response"); pred_prob_Q3gamingtimeT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_Q3gamingtimeT1))
+    sim_data$Q3gamingtimeT1 <- rbinom(n_sim, 1, pred_prob_Q3gamingtimeT1)
+    
+    pred_prob_noexerciseMT1 <- predict(noexerciseMT1_model, newdata = sim_data, type = "response"); pred_prob_noexerciseMT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_noexerciseMT1))
+    sim_data$noexerciseMT1 <- rbinom(n_sim, 1, pred_prob_noexerciseMT1)
+    
+    pred_prob_coffeeT1 <- predict(coffeeT1_model, newdata = sim_data, type = "response"); pred_prob_coffeeT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_coffeeT1))
+    sim_data$coffeeT1 <- rbinom(n_sim, 1, pred_prob_coffeeT1)
+    
+    pred_prob_anydepT1 <- predict(anydepT1_model, newdata = sim_data, type = "response"); pred_prob_anydepT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_anydepT1))
+    sim_data$anydepT1 <- rbinom(n_sim, 1, pred_prob_anydepT1)
+    
+    # Simulated mediator distributions
+    pred_prob_wishsubT2 <- predict(wishsubT2_model, newdata = sim_data, type = "response"); pred_prob_wishsubT2 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_wishsubT2))
+    sim_data$wishsubT2  <- rbinom(n_sim, 1, pred_prob_wishsubT2)
+    
+    pred_prob_desireT2 <- predict(desirethinT2_model, newdata = sim_data, type = "response"); pred_prob_desireT2 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_desireT2))
+    sim_data$desirethinT2 <- rbinom(n_sim, 1, pred_prob_desireT2)
+    
+    pred_prob_lonelyT2 <- predict(lonelyT2_model, newdata = sim_data, type = "response"); pred_prob_lonelyT2 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_lonelyT2))
+    sim_data$lonelyT2  <- rbinom(n_sim, 1, pred_prob_lonelyT2)
+    
+    return(sim_data)
+  }
+  
+  # Simulate data under A=1 and A=0, allowing mediators to respond naturally
+  sim_data_A0_1 <- simulate_full_history_fn(d_baseline_for_pred, 1) 
+  sim_data_A0_0 <- simulate_full_history_fn(d_baseline_for_pred, 0) 
+  
+  # Extract mediators for A=0 scenario
+  realized_wish_hist_A0_0 <- sim_data_A0_0[, c("wishsubT2")]
+  realized_desire_hist_A0_0 <- sim_data_A0_0[, c("desirethinT2")]
+  realized_lonely_hist_A0_0 <- sim_data_A0_0[, c("lonelyT2")]
+  
+  # Extract mediators for A=1 scenario
+  realized_wish_hist_A0_1 <- sim_data_A0_1[, c("wishsubT2")]
+  realized_desire_hist_A0_1 <- sim_data_A0_1[, c("desirethinT2")]
+  realized_lonely_hist_A0_1 <- sim_data_A0_1[, c("lonelyT2")]
+  
+  # Obtain G terms by permuting mediators
+  perm_indices_a0 <- sample(1:n_obs, n_obs, replace = FALSE) 
+  G_wish_hist_A0_0 <- realized_wish_hist_A0_0[perm_indices_a0]
+  G_desire_hist_A0_0 <- realized_desire_hist_A0_0[perm_indices_a0]
+  G_lonely_hist_A0_0 <- realized_lonely_hist_A0_0[perm_indices_a0]
+  
+  perm_indices_a1 <- sample(1:n_obs, n_obs, replace = FALSE)
+  G_wish_hist_A0_1 <- realized_wish_hist_A0_1[perm_indices_a1] 
+  G_desire_hist_A0_1 <- realized_desire_hist_A0_1[perm_indices_a1]
+  G_lonely_hist_A0_1 <- realized_lonely_hist_A0_1[perm_indices_a1]
+  
+  # Calculate Q terms ---
+  create_Q_dataset_modified_full <- function(baseline_data, A0_val_for_Q, 
+                                             G_wish_hist_for_Q, G_desire_hist_for_Q, 
+                                             G_lonely_hist_for_Q) { 
+    q_data <- baseline_data 
+    q_data$girl <- A0_val_for_Q
+    n_q_obs <- nrow(q_data)
+    
+    # Assign G histories
+    q_data$wishsubT2  <- G_wish_hist_for_Q
+    q_data$desirethinT2 <- G_desire_hist_for_Q
+    q_data$lonelyT2  <- G_lonely_hist_for_Q
+    
+    # Simulate L1
+    q_data$bmiT1      <- rnorm(n_q_obs, predict(bmiT1_model, newdata = q_data), sigma_bmiT1)
+    q_data$mothernriT1      <- rnorm(n_q_obs, predict(mothernriT1_model, newdata = q_data), sigma_mothernriT1)
+    q_data$fathernriT1      <- rnorm(n_q_obs, predict(fathernriT1_model, newdata = q_data), sigma_fathernriT1)
+    q_data$friendnriT1      <- rnorm(n_q_obs, predict(friendnriT1_model, newdata = q_data), sigma_friendnriT1)
+    q_data$piuT1      <- rnorm(n_q_obs, predict(piuT1_model, newdata = q_data), sigma_piuT1)
+    
+    pred_prob_sdqbulliedT1 <- predict(sdqbulliedT1_model, newdata = q_data, type = "response"); pred_prob_sdqbulliedT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_sdqbulliedT1))
+    q_data$sdqbulliedT1 <- rbinom(n_q_obs, 1, pred_prob_sdqbulliedT1)
+    
+    pred_prob_punishT1 <- predict(punishT1_model, newdata = q_data, type = "response"); pred_prob_punishT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_punishT1))
+    q_data$punishT1 <- rbinom(n_q_obs, 1, pred_prob_punishT1)
+    
+    pred_prob_Q3gamingtimeT1 <- predict(Q3gamingtimeT1_model, newdata = q_data, type = "response"); pred_prob_Q3gamingtimeT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_Q3gamingtimeT1))
+    q_data$Q3gamingtimeT1 <- rbinom(n_q_obs, 1, pred_prob_Q3gamingtimeT1)
+    
+    pred_prob_noexerciseMT1 <- predict(noexerciseMT1_model, newdata = q_data, type = "response"); pred_prob_noexerciseMT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_noexerciseMT1))
+    q_data$noexerciseMT1 <- rbinom(n_q_obs, 1, pred_prob_noexerciseMT1)
+    
+    pred_prob_coffeeT1 <- predict(coffeeT1_model, newdata = q_data, type = "response"); pred_prob_coffeeT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_coffeeT1))
+    q_data$coffeeT1 <- rbinom(n_q_obs, 1, pred_prob_coffeeT1)
+    
+    pred_prob_anydepT1 <- predict(anydepT1_model, newdata = q_data, type = "response"); pred_prob_anydepT1 <- pmax(1e-6, pmin(1 - 1e-6, pred_prob_anydepT1))
+    q_data$anydepT1 <- rbinom(n_q_obs, 1, pred_prob_anydepT1)
+    
+    return(q_data)
+  }
+  
+  # Predicted counterfactual values for outcome
+  Q_A1_G0_L1 <- mean(predict(outcome_model_T3, newdata = create_Q_dataset_modified_full(d_baseline_for_pred, 1, 
+                                                                                        G_wish_hist_A0_0, G_desire_hist_A0_0, G_lonely_hist_A0_0), type = "response"), na.rm=TRUE)
+  
+  Q_A0_G0_L0 <- mean(predict(outcome_model_T3, newdata = create_Q_dataset_modified_full(d_baseline_for_pred, 0, 
+                                                                                        G_wish_hist_A0_0, G_desire_hist_A0_0, G_lonely_hist_A0_0), type = "response"), na.rm=TRUE)
+  
+  Q_A1_G1_L1 <- mean(predict(outcome_model_T3, newdata = create_Q_dataset_modified_full(d_baseline_for_pred, 1, 
+                                                                                        G_wish_hist_A0_1, G_desire_hist_A0_1, G_lonely_hist_A0_1), type = "response"), na.rm=TRUE)
+  
+  
+  # Calculate TE, IDE, TIE, OE, and Difference
+  IDE <- Q_A1_G0_L1 - Q_A0_G0_L0
+  TIE <- Q_A1_G1_L1 - Q_A1_G0_L1
+  OE <- IDE + TIE
+  
+  EY_A0_1_natural <- mean(predict(outcome_model_T3, newdata = sim_data_A0_1, type = "response"), na.rm=TRUE)
+  EY_A0_0_natural <- mean(predict(outcome_model_T3, newdata = sim_data_A0_0, type = "response"), na.rm=TRUE)
+  TE  <- EY_A0_1_natural - EY_A0_0_natural
+  
+  Difference <- TE - OE 
+  
+  return(c(TE = TE, OE = OE, IDE = IDE, TIE = TIE, Difference = Difference))
+}
+
+# Run on imputed datasets
+if (!exists("df_miced") || !inherits(df_miced, "mids")) {
+  stop("df_miced object not found or not a 'mids' object. Please load your imputed data.")
+}
+required_cols_modified <- c(
+  # A0, V
+  "girl", "AA1age", "incomeT1", "AA79Fsep", "cohesionT1","BFIQ",
+  # L1
+  "bmiT1", "mothernriT1", "fathernriT1", "friendnriT1",  "punishT1", "sdqbulliedT1", 
+  "piuT1", "Q3gamingtimeT1", "noexerciseMT1", "coffeeT1", "anydepT1", 
+  # M2
+  "wishsubT2", "desirethinT2", "lonelyT2", 
+  # Y3
+  "anydepT3"
+) 
+
+if (!all(required_cols_modified %in% names(df_miced$data))) {
+  missing_cols <- required_cols_modified[!required_cols_modified %in% names(df_miced$data)]
+  stop(paste("The following required columns are missing from df_miced$data:", paste(missing_cols, collapse=", ")))
+}
+
+# Loop through each imputed dataset and apply the estimation function
+results_list_modified <- lapply(1:df_miced$m, function(i) {
+  current_data <- mice::complete(df_miced, i)
+  effect_estimates_modified_fn(current_data, seq_len(nrow(current_data))) 
+})
+
+# Pooled means
+results_df_modified <- do.call(rbind, results_list_modified)
+mean_col_names_modified <- c("TE", "OE", "IDE", "TIE", "Difference")
+means_modified <- colMeans(results_df_modified[, mean_col_names_modified], na.rm = TRUE)
+
+# Averaged estimates
+TE_mean_final <- means_modified["TE"]
+OE_mean_final <- means_modified["OE"]
+IDE_mean_final <- means_modified["IDE"]
+TIE_mean_final <- means_modified["TIE"]
+Diff_mean_final <- means_modified["Difference"]
+
+# Calculate PM 
+PM_final <- NA
+if (!is.na(TE_mean_final) && TE_mean_final != 0 && !is.na(TIE_mean_final) && !is.na(Diff_mean_final)) {
+  PM_final <- (TIE_mean_final + Diff_mean_final) / TE_mean_final # As Diff will be near zero, this is effectively TIE/TE
+}
+
+# Print final results for point estimates
+print(paste("TE (Total Effect of 'girl'):", TE_mean_final))
+print(paste("OE (IDE + TIE):", OE_mean_final)) 
+print(paste("IDE (Direct Effect):", IDE_mean_final))
+print(paste("TIE (Total Indirect Effect via wishsub, desirethin, lonely):", TIE_mean_final))
+print(paste("Difference (TE - OE):", Diff_mean_final)) # This should be numerically close to zero
+print(paste("PM (Proportion Mediated, as defined):", PM_final))
