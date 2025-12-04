@@ -38,15 +38,9 @@ Expected output includes estimated interventional direct and indirect effects, b
 The expected run time for the demo is approximately 30–60 seconds on a standard desktop computer.
 
 Instructions for Use (Real Data)
-To run the mediational g-formula on real data, prepare a dataset including: exposure (sex assigned at birth), mediators (loneliness, thin-ideal internalization, gender-related stressors), outcomes (depression, suicidal ideation, self-harm, anxiety), and confounders assessed at age 12 (as listed in the manuscript).
+To run the mediational g-formula on real data, provide your actual analytical dataset in the same structure as the demo data and update the file paths in run_analysis.R accordingly.
 Modify file paths and dataset names in run_analysis.R as appropriate for your environment.
-Run the analysis by starting R in the repository directory and executing: source("run_analysis.R")
-Outputs include the total effect, interventional direct effect, interventional indirect effect, proportion mediated, and bootstrap confidence intervals (4,000 samples across imputations).
-Results are automatically saved in the output directory.
-
-Reproduction Instructions (Recommended)
-To reproduce all results reported in the manuscript, run: source("run_analysis.R")
-This script loads multiply imputed datasets, fits mediator and outcome models, implements the parametric mediational g-formula, computes interventional effects for all outcomes, and recreates the main quantitative tables (for example, Tables 2 and 3 in the manuscript).
+Outputs include the total effect, interventional direct effect, interventional indirect effect, proportion mediated, and bootstrap confidence intervals (4,000 estimates across imputations).
 
 License
 This code is released under the MIT License, an Open Source Initiative–approved license. Users may freely use, modify, and distribute the code with appropriate attribution.
