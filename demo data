@@ -1,0 +1,75 @@
+## make_demo_imputed_data.R
+## This script creates a small synthetic dataset `data_imputed`
+## and then runs mice(..., m = 20, method = "rf", seed = 11111)
+## to generate df_miced, which is saved in imputed_data.RData.
+
+set.seed(123)
+
+# Number of demo observations 
+n <- 200
+
+# Create synthetic dataset with all required columns
+data_imputed <- data.frame(
+  # Exposure
+  
+  # Covariates unaffected by sex
+  girl         = rbinom(n, 1, 0.5),                       
+  AA1age       = rnorm(n, mean = 12.2, sd = 0.3),
+  incomeT1     = sample(1:3, n, replace = TRUE),           
+  AA79Fsep     = rbinom(n, 1, 0.1),
+  cohesionT1   = rnorm(n, mean = 13, sd = 3),
+  BFIQ         = rnorm(n, mean = 110, sd = 15),
+  
+  # Covariates affected by sex 
+  bmiT1            = rnorm(n, mean = 18, sd = 2.5),
+  mothernriT1      = rnorm(n, mean = 0, sd = 1),
+  fathernriT1      = rnorm(n, mean = 0, sd = 1),
+  friendnriT1      = rnorm(n, mean = 0, sd = 1),
+  punishT1         = rbinom(n, 1, 0.3),
+  sdqbulliedT1     = rbinom(n, 1, 0.2),
+  piuT1            = rnorm(n, mean = 4, sd = 2),
+  Q3gamingtimeT1   = rbinom(n, 1, 0.4),
+  noexerciseMT1    = rbinom(n, 1, 0.2),
+  coffeeT1         = rbinom(n, 1, 0.1),
+  anydepT1         = rbinom(n, 1, 0.2),
+  
+  # Mediators
+  wishsubT2        = rbinom(n, 1, 0.3),
+  desirethinT2     = rbinom(n, 1, 0.4),
+  lonelyT2         = rbinom(n, 1, 0.3),
+  
+  # Outcome 
+  anydepT3         = rbinom(n, 1, 0.25)
+)
+
+# Optionally add some missingness 
+add_missing <- function(x, prop = 0.05) {
+  n <- length(x)
+  miss_idx <- sample(seq_len(n), size = floor(prop * n))
+  x[miss_idx] <- NA
+  x
+}
+
+cols_for_missing <- c("bmiT1", "mothernriT1", "fathernriT1", "friendnriT1",
+                      "piuT1", "anydepT1", "anydepT3")
+for (nm in cols_for_missing) {
+  data_imputed[[nm]] <- add_missing(data_imputed[[nm]], prop = 0.05)
+}
+
+# Run mice with your settings: m = 20, method = "rf", seed = 11111
+if (!requireNamespace("mice", quietly = TRUE)) {
+  stop("Please install the 'mice' package before running this script.")
+}
+
+library(mice)
+
+df_miced <- mice(
+  data_imputed,
+  m     = 20,
+  method= "rf",
+  seed  = 11111,
+  printFlag = FALSE
+)
+
+# Save as imputed_data.RData 
+save(df_miced, file = "imputed_data.RData")
