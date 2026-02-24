@@ -270,3 +270,82 @@ print(paste("IDE (Direct Effect):", IDE_mean_final))
 print(paste("TIE (Total Indirect Effect via wishsub, desirethin, lonely):", TIE_mean_final))
 print(paste("Difference (TE - OE):", Diff_mean_final)) # This should be numerically close to zero
 print(paste("PM (Proportion Mediated, as defined):", PM_final))
+
+## Bootstrap CIs
+n_bootstrap <- 200
+
+all_imputation_bootstrap_results <- list()
+metric_names <- c("TE", "OE", "IDE", "TIE", "Difference")
+
+# Loop through each imputed dataset
+for (i in 1:df_miced$m) {
+  current_data <- mice::complete(df_miced, i)
+  n_obs_current_data <- nrow(current_data)
+  
+  bootstrap_results_for_imputation <- list()
+  
+  for (b in 1:n_bootstrap) {
+    bootstrap_indices <- sample(1:n_obs_current_data, n_obs_current_data, replace = TRUE)
+    res <- tryCatch({
+      effect_estimates_modified_fn(current_data, bootstrap_indices)
+    }, error = function(e) {
+      warning(paste("Error in bootstrap sample (Imputation", i, ", Bootstrap", b, "):", e$message))
+      setNames(rep(NA, length(metric_names)), metric_names)
+    })
+    if (!is.null(res) && is.numeric(res) && all(metric_names %in% names(res))) {
+      bootstrap_results_for_imputation[[b]] <- res[metric_names] # Ensure order and specific metrics
+    } else {
+      # If result is not as expected, fill with NAs
+      warning(paste("Unexpected result format for bootstrap sample (Imputation", i, ", Bootstrap", b, ")"))
+      bootstrap_results_for_imputation[[b]] <- setNames(rep(NA, length(metric_names)), metric_names)
+    }
+  }
+  all_imputation_bootstrap_results[[i]] <- bootstrap_results_for_imputation
+}
+
+# A single list of vectors
+pooled_bootstrap_results_list <- unlist(all_imputation_bootstrap_results, recursive = FALSE)
+
+# Combine all bootstrap results into a single data frame
+pooled_bootstrap_results_list <- pooled_bootstrap_results_list[sapply(pooled_bootstrap_results_list, function(x) !is.null(x) && is.numeric(x) && length(x) == length(metric_names))]
+pooled_bootstrap_results_matrix <- do.call(rbind, pooled_bootstrap_results_list)
+pooled_bootstrap_results_df <- as.data.frame(pooled_bootstrap_results_matrix)
+
+# Percentile boot CIs
+alpha <- 0.05
+lower_quantile <- alpha / 2
+upper_quantile <- 1 - (alpha / 2)
+calculate_percentile_ci <- function(estimates) {
+  # Remove NA values before calculating quantiles
+  estimates <- estimates[!is.na(estimates)]
+  if (length(estimates) < 2) { # Need at least 2 non-NA values for quantiles
+    return(c(lower = NA, upper = NA))
+  }
+  quantile(estimates, probs = c(lower_quantile, upper_quantile), na.rm = TRUE)
+}
+
+ci_TE <- calculate_percentile_ci(pooled_bootstrap_results_df[, "TE"])
+ci_OE <- calculate_percentile_ci(pooled_bootstrap_results_df[, "OE"])
+ci_IDE <- calculate_percentile_ci(pooled_bootstrap_results_df[, "IDE"])
+ci_TIE <- calculate_percentile_ci(pooled_bootstrap_results_df[, "TIE"])
+ci_Difference <- calculate_percentile_ci(pooled_bootstrap_results_df[, "Difference"])
+pooled_bootstrap_results_df$PM <- NA_real_ # Initialize with NA_real_ for numeric type
+valid_te_pm <- pooled_bootstrap_results_df$TE != 0 & !is.na(pooled_bootstrap_results_df$TE)
+valid_tie_pm <- !is.na(pooled_bootstrap_results_df$TIE)
+valid_diff_pm <- !is.na(pooled_bootstrap_results_df$Difference)
+valid_pm_rows <- valid_te_pm & valid_tie_pm & valid_diff_pm
+pooled_bootstrap_results_df$PM[valid_pm_rows] <- (pooled_bootstrap_results_df$TIE[valid_pm_rows] + pooled_bootstrap_results_df$Difference[valid_pm_rows]) / pooled_bootstrap_results_df$TE[valid_pm_rows]
+ci_PM <- calculate_percentile_ci(pooled_bootstrap_results_df[, "PM"])
+
+
+# Print final results for CIs
+print(paste("TE (Total Effect of 'girl'):", round(TE_mean_final, 4),
+            " (95% CI: ", round(ci_TE[1], 4), ", ", round(ci_TE[2], 4), ")", sep = ""))
+print(paste("OE (IDE + TIE):", round(OE_mean_final, 4), # Updated label for OE
+            " (95% CI: ", round(ci_OE[1], 4), ", ", round(ci_OE[2], 4), ")", sep = ""))
+print(paste("IDE (Direct Effect):", round(IDE_mean_final, 4),
+            " (95% CI: ", round(ci_IDE[1], 4), ", ", round(ci_IDE[2], 4), ")", sep = ""))
+print(paste("TIE (Total Indirect Effect via wishsub, desirethin, lonely):", round(TIE_mean_final, 4), # Updated label for TIE
+            " (95% CI: ", round(ci_TIE[1], 4), ", ", round(ci_TIE[2], 4), ")", sep = ""))
+print(paste("Difference (TE - OE):", round(Diff_mean_final, 4),
+            " (95% CI: ", round(ci_Difference[1], 4), ", ", round(ci_Difference[2], 4), ")", sep = ""))
